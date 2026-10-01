@@ -80,6 +80,32 @@ def validate_payload(data: Any) -> dict:
     if not isinstance(data, dict):
         raise ValidationError("请求体必须是 JSON 对象")
 
+    params = _validate_common(data)
+
+    shared = data.get("shared_offset_review", False)
+    if not isinstance(shared, bool):
+        raise ValidationError(
+            "共享偏移复核开关必须为布尔值", "shared_offset_review"
+        )
+
+    if shared:
+        # The first round reuses the standard probe_a / probe_b fields;
+        # only the second round needs its own input keys.
+        params["A2"] = _parse_pulse_list(
+            data.get("round2_probe_a"),
+            "round2_probe_a",
+            "第二轮探头 A 的脉冲",
+        )
+        params["B2"] = _parse_pulse_list(
+            data.get("round2_probe_b"),
+            "round2_probe_b",
+            "第二轮探头 B 的脉冲",
+        )
+    params["shared"] = shared
+    return params
+
+
+def _validate_common(data: dict) -> dict:
     probe_a = _parse_pulse_list(data.get("probe_a"), "probe_a", "探头 A 的脉冲")
     probe_b = _parse_pulse_list(data.get("probe_b"), "probe_b", "探头 B 的脉冲")
 

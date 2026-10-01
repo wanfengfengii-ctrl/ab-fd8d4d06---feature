@@ -18,7 +18,20 @@
   </header>
 
   <section class="panel">
-    <h2>脉冲记录（纳秒，严格递增整数，6–24 个）</h2>
+    <label class="toggle">
+      <input id="sharedReview" type="checkbox">
+      <span>启用<strong>共享偏移复核</strong>（更换标准源强度前后两轮数据必须由同一时钟偏移解释）</span>
+    </label>
+    <p id="sharedHint" class="hint" hidden>
+      第一轮沿用下方录入；补录第二轮两组各 6–24 个严格递增整数纳秒时间。
+      符合容差、偏移闭区间与最低配对数对<strong>两轮共同生效</strong>：服务端在同一整数偏移下
+      依次最大化两轮配对数的较小值与总数、最小化合并残差绝对值总和及最大残差，
+      不会先分别校准再取交集。任一轮未达门槛都不给出校准偏移。
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>第一轮脉冲记录（更换标准源前，纳秒，严格递增整数，6–24 个）</h2>
     <div class="grid2">
       <div class="field">
         <label for="probeA">探头 A 时间</label>
@@ -32,7 +45,23 @@
       </div>
     </div>
 
-    <h2>校准参数</h2>
+    <div id="round2Panel" hidden>
+      <h2>第二轮脉冲记录（更换标准源后，纳秒，严格递增整数，6–24 个）</h2>
+      <div class="grid2">
+        <div class="field">
+          <label for="round2ProbeA">第二轮探头 A 时间</label>
+          <textarea id="round2ProbeA" rows="4" spellcheck="false"
+            placeholder="逗号、空格或换行分隔，6–24 个严格递增整数"></textarea>
+        </div>
+        <div class="field">
+          <label for="round2ProbeB">第二轮探头 B 时间</label>
+          <textarea id="round2ProbeB" rows="4" spellcheck="false"
+            placeholder="逗号、空格或换行分隔，6–24 个严格递增整数"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <h2>校准参数（两轮共同生效）</h2>
     <div class="grid4">
       <div class="field">
         <label for="offsetMin">偏移区间下限（闭区间，ns）</label>
@@ -65,6 +94,7 @@
     <div id="verdict"></div>
     <div id="metrics" class="metrics"></div>
     <div id="pairsWrap"></div>
+    <div id="sharedRounds"></div>
     <div class="grid2">
       <div id="unpairedA"></div>
       <div id="unpairedB"></div>

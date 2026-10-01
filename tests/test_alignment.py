@@ -13,7 +13,7 @@ import random
 import unittest
 from itertools import combinations
 
-from app.alignment import best_pairing_at, solve
+from app.alignment import best_pairing_at, solve, solve_shared
 
 
 def all_order_preserving_matchings(n, m):
@@ -261,6 +261,241 @@ class SolverTests(unittest.TestCase):
             self.assertEqual(res.pair_count, ref_obj[0])
             self.assertEqual(res.residual_abs_sum, -ref_obj[1])
             self.assertEqual(res.max_abs_residual, -ref_obj[2])
+
+
+def _brute_best_round(A, B, d, tol):
+    """Full enumeration reference for one round at one offset."""
+    best = None
+    for pairs in all_order_preserving_matchings(len(A), len(B)):
+        residuals = [A[i] - (B[j] + d) for (i, j) in pairs]
+        if any(abs(r) > tol for r in residuals):
+            continue
+        score = (
+            len(pairs),
+            -sum(abs(r) for r in residuals),
+            -max((abs(r) for r in residuals), default=0),
+            tuple(pairs),
+        )
+        if best is None or score > best:
+            best = score
+    return best
+
+
+def _brute_shared(A1, B1, A2, B2, lo, hi, tol):
+    """Enumerate every offset and every pair of order-preserving matchings."""
+    best = None
+    best_d = None
+    for d in range(lo, hi + 1):
+        s1 = _brute_best_round(A1, B1, d, tol)
+        s2 = _brute_best_round(A2, B2, d, tol)
+        score = (
+            min(s1[0], s2[0]),
+            s1[0] + s2[0],
+            s1[1] + s2[1],
+            min(s1[2], s2[2]),
+            -d,
+            (s1[3], s2[3]),
+        )
+        if best is None or score > best:
+            best = score
+            best_d = d
+    return best_d, best
+
+
+def _scan_shared(A1, B1, A2, B2, lo, hi, tol):
+    """Dense nanosecond DP scan for the two-round objective."""
+    best = None
+    best_d = None
+    for d in range(lo, hi + 1):
+        vals = []
+        for (A, B) in ((A1, B1), (A2, B2)):
+            c = [[a - b - d for b in B] for a in A]
+            obj, _ = best_pairing_at(c, tol)
+            vals.append(obj)
+        counts = [v[0] for v in vals]
+        score = (
+            min(counts),
+            sum(counts),
+            vals[0][1] + vals[1][1],
+            min(vals[0][2], vals[1][2]),
+            -d,
+        )
+        if best is None or score > best:
+            best = score
+            best_d = d
+    return best_d, best
+
+
+class SharedSolverTests(unittest.TestCase):
+    def test_consistent_rounds_recover_exact_offset(self):
+        shift = -543_210_987
+        A1 = [10**12 + k * 71 for k in range(8)]
+        B1 = [a - shift for a in A1]
+        A2 = [2 * 10**12 + k * 53 + (k % 2) for k in range(10)]
+        B2 = [a - shift for a in A2]
+        res = solve_shared(A1, B1, A2, B2, -10**9, 10**9, 3, 6)
+        self.assertTrue(res.sufficient)
+        self.assertEqual(res.offset, shift)
+        self.assertEqual(res.min_pair_count, 8)
+        self.assertEqual(res.total_pair_count, 18)
+        self.assertEqual(res.residual_abs_sum, 0)
+        self.assertEqual(res.max_abs_residual, 0)
+        self.assertEqual([r["pair_count"] for r in res.rounds], [8, 10])
+
+    def test_between_batch_drift_fails_shared_but_each_round_ok(self):
+        # The point of shared review: each round alone calibrates, but no
+        # single offset explains both, so the shared verdict must refuse an
+        # offset and report the achievable min / actual counts.
+        A = [100 + k * 137 for k in range(10)]
+        B1 = list(A)               # round 1: shift 0
+        B2 = [a - 200 for a in A]  # round 2: shift 200
+
+        one = solve(A, B1, -1000, 1000, 5, 8)
+        two = solve(A, B2, -1000, 1000, 5, 8)
+        self.assertTrue(one.sufficient and two.sufficient)
+
+        res = solve_shared(A, B1, A, B2, -1000, 1000, 5, 8)
+        self.assertFalse(res.sufficient)
+        self.assertIsNotNone(res.reason)
+        self.assertIn("批间一致性证据不足", res.reason)
+        self.assertEqual(res.min_pair_count, 0)
+        self.assertEqual(
+            [r["pair_count"] for r in res.rounds], [10, 0]
+        )
+        d = res.to_dict()
+        self.assertIsNone(d["offset"])
+        self.assertEqual(d["min_pair_count"], 0)
+        self.assertEqual(d["round_pair_counts"], [10, 0])
+        for rnd in d["rounds"]:
+            self.assertEqual(rnd["pairs"], [])
+            self.assertIsNone(rnd["offset"])
+        # Diagnostic keeps the best shared alignment, clearly labelled.
+        self.assertIn("diagnostic", d)
+        self.assertEqual(d["diagnostic"]["offset"], res.offset)
+        self.assertEqual(len(d["diagnostic"]["rounds"]), 2)
+
+    def test_cross_round_max_residual_decides(self):
+        # Round 1 c-values {0,0}, round 2 c-values {10,10}: count and merged
+        # cost tie for every d in [0,10]; the merged largest residual is
+        # max(|d|,|d-10|), uniquely minimised at d=5.  Only cross-round
+        # midpoints produce that candidate.
+        A1 = [0, 100]
+        B1 = [0, 100]
+        A2 = [1000, 1100]
+        B2 = [990, 1090]
+        res = solve_shared(A1, B1, A2, B2, -50, 50, 10, 2)
+        self.assertEqual(res.offset, 5)
+        self.assertEqual([r["pair_count"] for r in res.rounds], [2, 2])
+        self.assertEqual(res.max_abs_residual, 5)
+        self.assertEqual(res.residual_abs_sum, 20)
+
+    def test_cross_round_half_integer_prefers_smaller_offset(self):
+        A1 = [0, 100]
+        B1 = [0, 100]
+        A2 = [1000, 1100]
+        B2 = [989, 1089]  # c-values {11,11}: midpoint 5.5
+        res = solve_shared(A1, B1, A2, B2, -50, 50, 10, 2)
+        self.assertEqual(res.offset, 5)
+        self.assertEqual(res.max_abs_residual, 6)
+
+    def test_threshold_applies_per_round(self):
+        # Both rounds must reach min_pairs at the one shared offset.
+        shift = 120
+        A1 = [10, 20, 30, 40, 50, 60]
+        B1 = [a - shift for a in A1]
+        A2 = [1000 + k * 11 for k in range(6)]
+        B2 = [a - shift for a in A2]
+        res = solve_shared(A1, B1, A2, B2, -500, 500, 2, 6)
+        self.assertTrue(res.sufficient)
+        self.assertEqual(res.offset, shift)
+        self.assertEqual(res.min_pair_count, 6)
+
+    def test_fuzz_shared_against_brute_force(self):
+        rng = random.Random(424242)
+        cases = 0
+        for _ in range(500):
+            n1, m1, n2, m2 = (rng.randint(1, 4) for _ in range(4))
+            A1 = make_increasing(rng, n1, 40)
+            B1 = make_increasing(rng, m1, 40)
+            A2 = make_increasing(rng, n2, 40)
+            B2 = make_increasing(rng, m2, 40)
+            lo = rng.randint(-20, 0)
+            hi = lo + rng.randint(0, 25)
+            tol = rng.randint(0, 8)
+
+            d_exp, exp = _brute_shared(A1, B1, A2, B2, lo, hi, tol)
+            res = solve_shared(A1, B1, A2, B2, lo, hi, tol, 1)
+            counts = [r["pair_count"] for r in res.rounds]
+            got = (
+                min(counts),
+                sum(counts),
+                -res.residual_abs_sum,
+                -res.max_abs_residual,
+                -res.offset,
+            )
+            self.assertEqual(
+                got, exp[:5],
+                msg=f"A1={A1} B1={B1} A2={A2} B2={B2} "
+                    f"lo={lo} hi={hi} tol={tol} d*={d_exp}",
+            )
+            if res.offset == d_exp:
+                gp1 = tuple(
+                    (p.index_a - 1, p.index_b - 1)
+                    for p in res.rounds[0]["pairs"]
+                )
+                gp2 = tuple(
+                    (p.index_a - 1, p.index_b - 1)
+                    for p in res.rounds[1]["pairs"]
+                )
+                self.assertEqual(
+                    (gp1, gp2), (tuple(exp[5][0]), tuple(exp[5][1]))
+                )
+            cases += 1
+        self.assertGreater(cases, 0)
+
+    def test_fuzz_shared_dense_scan_small_windows(self):
+        rng = random.Random(31337)
+        for _ in range(500):
+            n1, m1, n2, m2 = (rng.randint(1, 7) for _ in range(4))
+            A1 = make_increasing(rng, n1, 80)
+            B1 = make_increasing(rng, m1, 80)
+            A2 = make_increasing(rng, n2, 80)
+            B2 = make_increasing(rng, m2, 80)
+            tol = rng.randint(0, 12)
+            d_exp, exp = _scan_shared(A1, B1, A2, B2, -120, 120, tol)
+            res = solve_shared(A1, B1, A2, B2, -120, 120, tol, 1)
+            counts = [r["pair_count"] for r in res.rounds]
+            got = (
+                min(counts),
+                sum(counts),
+                -res.residual_abs_sum,
+                -res.max_abs_residual,
+                -res.offset,
+            )
+            self.assertEqual(got, exp, msg=f"d*={d_exp} tol={tol}")
+
+    def test_fuzz_shared_dense_scan_wide_window(self):
+        # Interval far wider than the data span: guards candidate omission
+        # in open regions, including cross-round residual-extreme cases.
+        rng = random.Random(2024)
+        for _ in range(200):
+            n1, m1, n2, m2 = (rng.randint(2, 7) for _ in range(4))
+            A1 = make_increasing(rng, n1, 60)
+            B1 = make_increasing(rng, m1, 60)
+            A2 = make_increasing(rng, n2, 60)
+            B2 = make_increasing(rng, m2, 60)
+            tol = rng.randint(0, 12)
+            d_exp, exp = _scan_shared(A1, B1, A2, B2, -500, 500, tol)
+            res = solve_shared(A1, B1, A2, B2, -500, 500, tol, 1)
+            counts = [r["pair_count"] for r in res.rounds]
+            got = (
+                min(counts),
+                sum(counts),
+                -res.residual_abs_sum,
+                -res.max_abs_residual,
+                -res.offset,
+            )
+            self.assertEqual(got, exp, msg=f"d*={d_exp} tol={tol}")
 
 
 if __name__ == "__main__":

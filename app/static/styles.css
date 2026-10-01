@@ -42,6 +42,35 @@ header h1 { font-size: 24px; margin: 0 0 6px; }
 
 .panel h2 { font-size: 17px; margin: 4px 0 12px; }
 
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input { margin-top: 3px; width: 16px; height: 16px; }
+.hint {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--warn-ink);
+  background: var(--warn-bg);
+  border: 1px solid #f0d68a;
+  border-radius: 8px;
+}
+
+.round-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  background: #fafcfe;
+}
+.round-block h3 { margin-top: 2px; }
+
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 
@@ -96,7 +125,7 @@ button:disabled { opacity: .6; cursor: wait; }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }

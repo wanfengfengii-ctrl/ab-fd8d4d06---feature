@@ -187,6 +187,135 @@ class ApiTests(unittest.TestCase):
             status, _, _ = h.get("/nope")
             self.assertEqual(status, 404)
 
+    # -- shared-offset review ------------------------------------------------
+    def test_shared_review_consistent_rounds(self):
+        with ServerHarness() as h:
+            shift = -543_210_987
+            A1 = [10**12 + k * 71 for k in range(8)]
+            B1 = [a - shift for a in A1]
+            A2 = [2 * 10**12 + k * 53 for k in range(10)]
+            B2 = [a - shift for a in A2]
+            status, body = h.post({
+                "probe_a": A1,
+                "probe_b": B1,
+                "round2_probe_a": A2,
+                "round2_probe_b": B2,
+                "shared_offset_review": True,
+                "offset_min": -1_000_000_000,
+                "offset_max": 1_000_000_000,
+                "tolerance": 3,
+                "min_pairs": 6,
+            })
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body["sufficient"])
+            self.assertTrue(body["shared_offset_review"])
+            self.assertEqual(body["offset"], shift)
+            self.assertEqual(body["round_pair_counts"], [8, 10])
+            self.assertEqual(body["min_pair_count"], 8)
+            self.assertEqual(body["total_pair_count"], 18)
+            self.assertEqual(len(body["rounds"]), 2)
+            self.assertEqual(
+                [len(r["pairs"]) for r in body["rounds"]], [8, 10]
+            )
+            for r in body["rounds"]:
+                self.assertEqual(r["offset"], shift)
+
+    def test_shared_review_drift_no_offset(self):
+        with ServerHarness() as h:
+            A = [100 + k * 137 for k in range(10)]
+            B1 = list(A)
+            B2 = [a - 200 for a in A]
+            status, body = h.post({
+                "probe_a": A,
+                "probe_b": B1,
+                "round2_probe_a": A,
+                "round2_probe_b": B2,
+                "shared_offset_review": True,
+                "offset_min": -1000,
+                "offset_max": 1000,
+                "tolerance": 5,
+                "min_pairs": 8,
+            })
+            self.assertEqual(status, 200, body)
+            self.assertFalse(body["sufficient"])
+            self.assertIsNone(body["offset"])
+            self.assertEqual(body["round_pair_counts"], [10, 0])
+            self.assertEqual(body["min_pair_count"], 0)
+            for r in body["rounds"]:
+                self.assertEqual(r["pairs"], [])
+                self.assertIsNone(r["offset"])
+            self.assertIn("批间一致性证据不足", body["reason"])
+            self.assertIn("10", body["reason"])
+            diag = body["diagnostic"]
+            self.assertIn("offset", diag)
+            self.assertEqual(len(diag["rounds"]), 2)
+
+    def test_shared_review_missing_round2_rejected(self):
+        with ServerHarness() as h:
+            status, body = h.post({
+                "probe_a": [1, 2, 3, 4, 5, 6],
+                "probe_b": [1, 2, 3, 4, 5, 6],
+                "shared_offset_review": True,
+                "offset_min": -5,
+                "offset_max": 5,
+                "tolerance": 0,
+                "min_pairs": 4,
+            })
+            self.assertEqual(status, 400)
+            self.assertEqual(body["field"], "round2_probe_a")
+
+    def test_shared_review_round2_bad_count_rejected(self):
+        with ServerHarness() as h:
+            status, body = h.post({
+                "probe_a": [1, 2, 3, 4, 5, 6],
+                "probe_b": [1, 2, 3, 4, 5, 6],
+                "round2_probe_a": [1, 2, 3, 4, 5],
+                "round2_probe_b": [1, 2, 3, 4, 5, 6],
+                "shared_offset_review": True,
+                "offset_min": -5,
+                "offset_max": 5,
+                "tolerance": 0,
+                "min_pairs": 4,
+            })
+            self.assertEqual(status, 400)
+            self.assertEqual(body["field"], "round2_probe_a")
+            self.assertIn("6–24", body["error"])
+
+    def test_shared_flag_must_be_boolean(self):
+        with ServerHarness() as h:
+            payload = {
+                "probe_a": [1, 2, 3, 4, 5, 6],
+                "probe_b": [1, 2, 3, 4, 5, 6],
+                "shared_offset_review": "true",
+                "offset_min": -5,
+                "offset_max": 5,
+                "tolerance": 0,
+                "min_pairs": 4,
+            }
+            status, body = h.post(payload)
+            self.assertEqual(status, 400)
+            self.assertEqual(body["field"], "shared_offset_review")
+
+    def test_round2_ignored_when_review_disabled(self):
+        # Backward compatibility: without the flag the request/response stay
+        # exactly the single-round shape, even if round2_* keys are present.
+        with ServerHarness() as h:
+            payload = {
+                "probe_a": [1, 2, 3, 4, 5, 6],
+                "probe_b": [1, 2, 3, 4, 5, 6],
+                "round2_probe_a": [1, 2, 3, 4, 5],  # invalid but ignored
+                "offset_min": -5,
+                "offset_max": 5,
+                "tolerance": 0,
+                "min_pairs": 6,
+            }
+            status, body = h.post(payload)
+            self.assertEqual(status, 200, body)
+            self.assertTrue(body["sufficient"])
+            self.assertNotIn("shared_offset_review", body)
+            self.assertNotIn("rounds", body)
+            self.assertEqual(body["offset"], 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
