@@ -1,0 +1,32 @@
+services:
+  app:
+    build: .
+    image: coincidence-calibrator:latest
+    environment:
+      APP_PORT: ${APP_PORT:-8080}
+    ports:
+      # Host port is configurable via APP_PORT; the container always listens
+      # on APP_PORT as well.
+      - "${APP_PORT:-8080}:${APP_PORT:-8080}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request,sys; port=os.environ.get('APP_PORT','8080'); sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:%s/healthz' % port, timeout=2).status == 200 else 1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 1s
+    restart: unless-stopped
+
+  # One-shot verification: starts only after the app is healthy, runs the
+  # code tests, the build check and a wide-offset-interval API smoke test,
+  # and reports success/failure via its exit code.
+  verify:
+    build: .
+    image: coincidence-calibrator:latest
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      APP_PORT: ${APP_PORT:-8080}
+      APP_BASE_URL: http://app:${APP_PORT:-8080}
+    entrypoint: ["/app/verify/verify.sh"]
+    restart: "no"

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>双探头符合事件联合校准</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<main class="container">
+  <header>
+    <h1>核医学双探头符合事件联合校准</h1>
+    <p class="subtitle">
+      联合选择一个整数时钟偏移与保持输入顺序的一对一配对：
+      依次最大化配对数、最小化残差绝对值总和、最小化最大残差绝对值，
+      再按偏移与输入序号稳定裁决。偏移由配对关系的临界值精确求解，不逐纳秒扫描。
+    </p>
+  </header>
+
+  <section class="panel">
+    <h2>脉冲记录（纳秒，严格递增整数，6–24 个）</h2>
+    <div class="grid2">
+      <div class="field">
+        <label for="probeA">探头 A 时间</label>
+        <textarea id="probeA" rows="4" spellcheck="false"
+          placeholder="逗号、空格或换行分隔，例如：100, 240, 388, 512, 665, 820"></textarea>
+      </div>
+      <div class="field">
+        <label for="probeB">探头 B 时间</label>
+        <textarea id="probeB" rows="4" spellcheck="false"
+          placeholder="逗号、空格或换行分隔，例如：18, 159, 306, 431, 585, 740"></textarea>
+      </div>
+    </div>
+
+    <h2>校准参数</h2>
+    <div class="grid4">
+      <div class="field">
+        <label for="offsetMin">偏移区间下限（闭区间，ns）</label>
+        <input id="offsetMin" type="number" step="1" value="-1000000000">
+      </div>
+      <div class="field">
+        <label for="offsetMax">偏移区间上限（闭区间，ns）</label>
+        <input id="offsetMax" type="number" step="1" value="1000000000">
+      </div>
+      <div class="field">
+        <label for="tolerance">符合容差 ±T（ns）</label>
+        <input id="tolerance" type="number" step="1" min="0" value="25">
+      </div>
+      <div class="field">
+        <label for="minPairs">最低配对数</label>
+        <input id="minPairs" type="number" step="1" min="1" max="24" value="4">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="submitBtn" type="button">提交联合校准</button>
+      <span id="staleNote" class="stale-note" hidden>输入已修改，旧结论已失效，请重新提交。</span>
+    </div>
+  </section>
+
+  <section id="errorBox" class="panel error" hidden></section>
+
+  <section id="resultPanel" class="panel" hidden>
+    <h2>校准结果</h2>
+    <div id="verdict"></div>
+    <div id="metrics" class="metrics"></div>
+    <div id="pairsWrap"></div>
+    <div class="grid2">
+      <div id="unpairedA"></div>
+      <div id="unpairedB"></div>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
