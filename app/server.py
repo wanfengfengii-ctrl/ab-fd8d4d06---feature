@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
 
-from .alignment import solve
+from .alignment import solve, solve_shared
 from .validation import ValidationError, validate_payload
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -95,7 +95,26 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        result = solve(**params)
+        if params["shared_review"]:
+            result = solve_shared(
+                A1=params["A"],
+                B1=params["B"],
+                A2=params["A2"],
+                B2=params["B2"],
+                offset_min=params["offset_min"],
+                offset_max=params["offset_max"],
+                tolerance=params["tolerance"],
+                min_pairs=params["min_pairs"],
+            )
+        else:
+            result = solve(
+                A=params["A"],
+                B=params["B"],
+                offset_min=params["offset_min"],
+                offset_max=params["offset_max"],
+                tolerance=params["tolerance"],
+                min_pairs=params["min_pairs"],
+            )
         self._send_json(HTTPStatus.OK, result.to_dict())
 
 

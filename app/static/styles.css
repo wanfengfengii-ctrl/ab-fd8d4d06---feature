@@ -67,6 +67,18 @@ textarea:focus, input:focus { outline: 2px solid rgba(26,111,176,.35); border-co
 
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
 
+.share-toggle label { display: flex; gap: 10px; align-items: flex-start;
+  cursor: pointer; font-size: 14px; }
+.share-toggle input { margin-top: 3px; }
+
+.round-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 14px 4px;
+  margin: 0 0 14px;
+  background: #fafcfe;
+}
+
 button {
   font: inherit;
   font-weight: 600;

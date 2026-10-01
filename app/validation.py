@@ -117,7 +117,7 @@ def validate_payload(data: Any) -> dict:
             f"最低配对数不能超过 {MIN_PAIRS_MAX}", "min_pairs"
         )
 
-    return {
+    result = {
         "A": probe_a,
         "B": probe_b,
         "offset_min": offset_min,
@@ -125,3 +125,23 @@ def validate_payload(data: Any) -> dict:
         "tolerance": tolerance,
         "min_pairs": min_pairs,
     }
+
+    if data.get("shared_review"):
+        # Shared-offset review: a second acquisition round from the same probe
+        # pair (after the calibration-source strength changed).  The offset
+        # interval, tolerance and minimum pair count are shared by both rounds.
+        if not isinstance(data["shared_review"], bool):
+            raise ValidationError(
+                "共享偏移复核标记必须是布尔值", "shared_review"
+            )
+        result["shared_review"] = True
+        result["A2"] = _parse_pulse_list(
+            data.get("probe_a_2"), "probe_a_2", "第二轮探头 A 的脉冲"
+        )
+        result["B2"] = _parse_pulse_list(
+            data.get("probe_b_2"), "probe_b_2", "第二轮探头 B 的脉冲"
+        )
+    else:
+        result["shared_review"] = False
+
+    return result

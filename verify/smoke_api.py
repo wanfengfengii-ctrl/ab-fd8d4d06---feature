@@ -98,6 +98,75 @@ def main() -> int:
     check(status == 400, "non-strict input rejected with 400")
     check("严格递增" in body.get("error", ""), "validation message returned")
 
+    # -- shared-offset review smoke --------------------------------------
+    # Two acquisition rounds share one true large shift; the shared offset
+    # must explain both jointly (the API must not calibrate per round).
+    shared_shift = 555_555_555
+    A1 = [10**12 + k * 137 for k in range(9)]
+    B1 = [a - shared_shift + (k % 2) * 2 for k, a in enumerate(A1)]
+    A2 = [4 * 10**12 + k * 211 for k in range(7)]
+    B2 = [a - shared_shift - (k % 2) for k, a in enumerate(A2)]
+    shared = {
+        "probe_a": A1, "probe_b": B1,
+        "probe_a_2": A2, "probe_b_2": B2,
+        "offset_min": -1_000_000_000,
+        "offset_max": 1_000_000_000,
+        "tolerance": 3, "min_pairs": 6,
+        "shared_review": True,
+    }
+    status, body = request("POST", "/api/calibrate", shared)
+    check(status == 200, f"shared review HTTP 200 (got {status})")
+    check(body.get("mode") == "shared", "shared review mode reported")
+    check(body.get("sufficient") is True, "shared review sufficient")
+    check(body.get("offset") == shared_shift,
+          f"shared offset recovered for both rounds ({shared_shift})")
+    check(body.get("pair_count_1") == 9, "round 1 pairs 9")
+    check(body.get("pair_count_2") == 7, "round 2 pairs 7")
+    check(body.get("min_pair_count") == 7, "joint min pair count is 7")
+    check(len(body.get("rounds", [])) == 2, "two round records returned")
+    check("diagnostic" not in body, "no diagnostic block on success")
+
+    # Batch drift: round 1 needs d=0, round 2 needs d=300; with ±3 ns
+    # tolerance and wide gaps no single offset clears 6 pairs in both rounds.
+    # The API must not present an offset and must report the jointly
+    # attainable min count plus both rounds' actual counts and a reason.
+    drift = {
+        "probe_a": [k * 200 for k in range(1, 9)],
+        "probe_b": [k * 200 for k in range(1, 9)],
+        "probe_a_2": [10_000 + k * 211 for k in range(8)],
+        "probe_b_2": [10_000 + k * 211 - 300 for k in range(8)],
+        "offset_min": -1_000_000_000,
+        "offset_max": 1_000_000_000,
+        "tolerance": 3, "min_pairs": 6,
+        "shared_review": True,
+    }
+    status, body = request("POST", "/api/calibrate", drift)
+    check(status == 200, "shared drift case HTTP 200")
+    check(body.get("sufficient") is False, "shared drift flagged insufficient")
+    check(body.get("offset") is None, "no calibration offset on drift")
+    check(
+        body.get("min_pair_count")
+        == min(body.get("pair_count_1"), body.get("pair_count_2")),
+        "reported min count matches both rounds' counts",
+    )
+    check(body.get("min_pair_count", 99) < 6, "joint min count below gate")
+    check(
+        "批间证据不足" in body.get("reason", ""),
+        "batch-evidence reason provided",
+    )
+    check(
+        body.get("diagnostic", {}).get("rounds")
+        and len(body["diagnostic"]["rounds"]) == 2,
+        "two-round diagnostic kept separate from the conclusion",
+    )
+
+    # Second-round validation error path.
+    bad_shared = dict(shared)
+    bad_shared["probe_a_2"] = [1, 2, 3, 4, 5, 5]
+    status, body = request("POST", "/api/calibrate", bad_shared)
+    check(status == 400, "non-strict second-round input rejected with 400")
+    check(body.get("field") == "probe_a_2", "error field identifies round 2 A")
+
     print("SMOKE OK")
     return 0
 

@@ -2,7 +2,10 @@
 
 const $ = (id) => document.getElementById(id);
 
-const fields = ["probeA", "probeB", "offsetMin", "offsetMax", "tolerance", "minPairs"];
+const round1Fields = ["probeA", "probeB", "offsetMin", "offsetMax", "tolerance", "minPairs"];
+const round2Fields = ["probeA2", "probeB2"];
+
+let sharedMode = false;
 
 function markStale() {
   // 旧结论立即失效：隐藏上一次结果，避免被误读为当前输入的结论。
@@ -11,8 +14,18 @@ function markStale() {
   $("errorBox").hidden = true;
 }
 
-fields.forEach((id) => {
+round1Fields.forEach((id) => {
   $(id).addEventListener("input", markStale);
+});
+round2Fields.forEach((id) => {
+  $(id).addEventListener("input", markStale);
+});
+
+$("sharedToggle").addEventListener("change", () => {
+  sharedMode = $("sharedToggle").checked;
+  $("round2Section").hidden = !sharedMode;
+  // 任一轮/模式修改立即使旧结论失效。
+  markStale();
 });
 
 function parseTimes(text) {
@@ -71,6 +84,14 @@ function renderUnpaired(title, list) {
 }
 
 function renderResult(r) {
+  if (r.mode === "shared") {
+    renderSharedResult(r);
+  } else {
+    renderSingleResult(r);
+  }
+}
+
+function renderSingleResult(r) {
   const panel = $("resultPanel");
   panel.hidden = false;
 
@@ -106,6 +127,63 @@ function renderResult(r) {
   $("unpairedB").innerHTML = renderUnpaired("未配对的 B 脉冲（序号 / 时间）", r.unpaired_b);
 }
 
+function renderRoundBlock(round, idx) {
+  return `<div class="round-block">
+      <h3>第 ${idx} 轮：实际配对 ${round.pair_count} 对
+        （残差绝对值和 ${round.residual_abs_sum}，
+        最大残差绝对值 ${round.max_abs_residual}）</h3>
+      ${renderPairs(round.pairs)}
+      <div class="grid2">
+        <div>${renderUnpaired(`第 ${idx} 轮未配对的 A 脉冲`, round.unpaired_a)}</div>
+        <div>${renderUnpaired(`第 ${idx} 轮未配对的 B 脉冲`, round.unpaired_b)}</div>
+      </div>
+    </div>`;
+}
+
+function renderSharedResult(r) {
+  const panel = $("resultPanel");
+  panel.hidden = false;
+  // 共享模式的两轮未配对明细都在各轮分块内，清空单轮遗留容器。
+  $("unpairedA").innerHTML = "";
+  $("unpairedB").innerHTML = "";
+
+  if (r.sufficient) {
+    $("verdict").innerHTML =
+      `<div class="verdict ok">共享偏移复核通过：两轮记录可由同一个整数时钟偏移
+        <span style="font-variant-numeric:tabular-nums">${r.offset}</span> ns
+        共同解释（门槛为每轮至少 ${r.min_pairs} 对）。</div>`;
+    $("metrics").innerHTML =
+      metric("共同整数偏移 (ns)", r.offset) +
+      metric("两轮较小配对数", `${r.min_pair_count} / 门槛 ${r.min_pairs}`) +
+      metric("第一轮 / 第二轮配对数", `${r.pair_count_1} / ${r.pair_count_2}`) +
+      metric("两轮配对总数", r.total_pair_count) +
+      metric("合并残差绝对值总和 (ns)", r.residual_abs_sum) +
+      metric("两轮最大残差绝对值 (ns)", r.max_abs_residual);
+    $("pairsWrap").innerHTML =
+      renderRoundBlock(r.rounds[0], 1) + renderRoundBlock(r.rounds[1], 2);
+  } else {
+    // 任一轮未达门槛：不给出校准偏移，只展示可同时达到的最大较小配对数、
+    // 两轮实际配对数与批间证据不足的原因。
+    $("verdict").innerHTML =
+      `<div class="verdict bad">共享偏移复核不通过：两轮无法在同一整数时钟偏移下
+        同时达到门槛 ${r.min_pairs} 对；可同时达到的最大较小配对数为
+        <span style="font-variant-numeric:tabular-nums">${r.min_pair_count}</span>
+        对（第一轮实际 ${r.pair_count_1} 对，第二轮实际 ${r.pair_count_2} 对）。
+        <span class="reason">${esc(r.reason || "")}</span></div>`;
+    $("metrics").innerHTML =
+      metric("可同时达到的最大较小配对数", `${r.min_pair_count} / 门槛 ${r.min_pairs}`) +
+      metric("第一轮实际配对数", r.pair_count_1) +
+      metric("第二轮实际配对数", r.pair_count_2) +
+      metric("两轮配对总数", r.total_pair_count);
+    const d = r.diagnostic;
+    $("pairsWrap").innerHTML =
+      `<p class="diagnostic-note">页面不给出校准偏移。以下为联合最大配对诊断
+        （两轮共用同一候选偏移），仅用于说明批间证据不足，不构成校准结论。</p>` +
+      renderRoundBlock(d.rounds[0], 1) +
+      renderRoundBlock(d.rounds[1], 2);
+  }
+}
+
 async function submit() {
   const payload = {
     probe_a: parseTimes($("probeA").value),
@@ -115,6 +193,11 @@ async function submit() {
     tolerance: $("tolerance").value.trim(),
     min_pairs: $("minPairs").value.trim(),
   };
+  if (sharedMode) {
+    payload.shared_review = true;
+    payload.probe_a_2 = parseTimes($("probeA2").value);
+    payload.probe_b_2 = parseTimes($("probeB2").value);
+  }
 
   const btn = $("submitBtn");
   btn.disabled = true;

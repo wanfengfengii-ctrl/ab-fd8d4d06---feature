@@ -18,7 +18,17 @@
   </header>
 
   <section class="panel">
-    <h2>脉冲记录（纳秒，严格递增整数，6–24 个）</h2>
+    <div class="share-toggle">
+      <label>
+        <input id="sharedToggle" type="checkbox">
+        <span>启用“共享偏移复核”（同一对探头更换标准源强度后的第二轮数据，
+          与首轮共用一个时钟偏移联合复核，禁止各轮独立取最优）</span>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>第一轮脉冲记录（纳秒，严格递增整数，6–24 个）</h2>
     <div class="grid2">
       <div class="field">
         <label for="probeA">探头 A 时间</label>
@@ -29,6 +39,22 @@
         <label for="probeB">探头 B 时间</label>
         <textarea id="probeB" rows="4" spellcheck="false"
           placeholder="逗号、空格或换行分隔，例如：18, 159, 306, 431, 585, 740"></textarea>
+      </div>
+    </div>
+
+    <div id="round2Section" hidden>
+      <h2>第二轮脉冲记录（沿用首轮校准参数，仅补录本轮两组各 6–24 个时间）</h2>
+      <div class="grid2">
+        <div class="field">
+          <label for="probeA2">第二轮探头 A 时间</label>
+          <textarea id="probeA2" rows="4" spellcheck="false"
+            placeholder="更换标准源强度后的第二轮 A 记录，6–24 个严格递增整数"></textarea>
+        </div>
+        <div class="field">
+          <label for="probeB2">第二轮探头 B 时间</label>
+          <textarea id="probeB2" rows="4" spellcheck="false"
+            placeholder="更换标准源强度后的第二轮 B 记录，6–24 个严格递增整数"></textarea>
+        </div>
       </div>
     </div>
 
